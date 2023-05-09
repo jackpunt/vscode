@@ -1191,7 +1191,7 @@ class BaseSetActiveEditorReadonly extends Action2 {
 	constructor(
 		id: string,
 		title: ILocalizedString,
-		private readonly newReadonlyState: true | false | 'toggle'
+		private readonly newReadonlyState: true | false | 'toggle' | 'clear'
 	) {
 		super({
 			id,
@@ -1267,6 +1267,19 @@ export class ToggleActiveEditorReadonly extends BaseSetActiveEditorReadonly {
 			ToggleActiveEditorReadonly.ID,
 			{ value: ToggleActiveEditorReadonly.LABEL, original: 'Toggle Active Editor Readonly' },
 			'toggle'
+		);
+	}
+}
+export class ClearActiveEditorReadonly extends BaseSetActiveEditorReadonly {
+
+	static readonly ID = 'workbench.action.files.clearActiveEditorReadonly';
+	static readonly LABEL = nls.localize('clearActiveEditorReadonly', "Clear Active Editor Readonly");
+
+	constructor() {
+		super(
+			ClearActiveEditorReadonly.ID,
+			{ value: ClearActiveEditorReadonly.LABEL, original: 'Clear Active Editor Readonly' },
+			'clear'
 		);
 	}
 }

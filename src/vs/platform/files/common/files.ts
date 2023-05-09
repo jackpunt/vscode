@@ -1248,6 +1248,7 @@ export const FILES_ASSOCIATIONS_CONFIG = 'files.associations';
 export const FILES_EXCLUDE_CONFIG = 'files.exclude';
 export const FILES_READONLY_INCLUDE_CONFIG = 'files.readonlyInclude';
 export const FILES_READONLY_EXCLUDE_CONFIG = 'files.readonlyExclude';
+export const FILES_READONLY_COMMAND_CONFIG = 'files.readonlyCommand';
 export const FILES_READONLY_FROM_PERMISSIONS_CONFIG = 'files.readonlyFromPermissions';
 
 export interface IGlobPatterns {

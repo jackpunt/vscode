@@ -8,8 +8,8 @@ import { InstantiationType, registerSingleton } from 'vs/platform/instantiation/
 import { Event, Emitter } from 'vs/base/common/event';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { RawContextKey, IContextKey, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IFilesConfiguration, AutoSaveConfiguration, HotExitConfiguration, FILES_READONLY_INCLUDE_CONFIG, FILES_READONLY_EXCLUDE_CONFIG, IFileStatWithMetadata, IGlobPatterns } from 'vs/platform/files/common/files';
+import { ConfigurationTarget, IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { IFilesConfiguration, AutoSaveConfiguration, HotExitConfiguration, FILES_READONLY_COMMAND_CONFIG, FILES_READONLY_INCLUDE_CONFIG, FILES_READONLY_EXCLUDE_CONFIG, IFileStatWithMetadata, IGlobPatterns } from 'vs/platform/files/common/files';
 import { equals } from 'vs/base/common/objects';
 import { URI } from 'vs/base/common/uri';
 import { isWeb } from 'vs/base/common/platform';
@@ -58,7 +58,7 @@ export interface IFilesConfigurationService {
 
 	isReadonly(resource: URI, stat?: IFileStatWithMetadata): boolean;
 
-	updateReadonly(resource: URI, readonly: true | false | 'toggle'): Promise<boolean>;
+	updateReadonly(resource: URI, readonly: true | false | 'toggle' | 'clear'): Promise<boolean>;
 
 	//#endregion
 
@@ -133,42 +133,49 @@ export class FilesConfigurationService extends Disposable implements IFilesConfi
 	}
 
 	isReadonly(resource: URI, stat?: IFileStatWithMetadata): boolean {
+		const configValue = (this.configurationService.inspect<IGlobPatterns | undefined>(FILES_READONLY_COMMAND_CONFIG, { resource }));
+		const globPatterns = configValue.user?.value;
+		const pathReadonly = globPatterns && globPatterns[this.uriToPath(resource)];
+
+		if (pathReadonly !== undefined) {
+			return pathReadonly;             // resource controlled by Command
+		}
+		if (this.readonlyIncludeMatcher.value.matches(resource)) {
+			return !this.readonlyExcludeMatcher.value.matches(resource); // resource controlled by Inc/Exc Globs
+		}
 		if (this.configuredReadonlyFromPermissions && stat?.locked) {
 			return true; // leverage file permissions if configured as such
 		}
-
-		return this.readonlyIncludeMatcher.value.matches(resource) && !this.readonlyExcludeMatcher.value.matches(resource);
+		return false;
 	}
 
-	async updateReadonly(resource: URI, readonly: true | false | 'toggle'): Promise<boolean> {
-		if (readonly === 'toggle') {
-			readonly = !this.isReadonly(resource);
+	async updateReadonly(resource: URI, newValue: true | false | 'toggle' | 'clear'): Promise<boolean> {
+		if (newValue === 'toggle') {
+			newValue = !this.isReadonly(resource);
 		}
 
 		// Add to target setting
-		if (readonly) {
-			const targetSettingToAdd = FILES_READONLY_INCLUDE_CONFIG;
-			const configurationToAdd = this.configurationService.inspect<IGlobPatterns | undefined>(targetSettingToAdd, { resource });
+		const targetSettingToAdd = FILES_READONLY_COMMAND_CONFIG;
+		const configurationToAdd = this.configurationService.inspect<IGlobPatterns | undefined>(targetSettingToAdd, { resource });
+		const pathUri = this.uriToPath(resource);
 
+		if (newValue === true || newValue === false) {
 			await this.configurationService.updateValue(targetSettingToAdd, {
 				...configurationToAdd.user?.value,
-				[this.uriToPath(resource)]: true
-			});
+				[pathUri]: newValue
+			}, ConfigurationTarget.USER);
+			return this.isReadonly(resource) === newValue;
 		}
+		// Remove from other setting (newValue === 'clear')
+		const targetSettingToRemove = FILES_READONLY_COMMAND_CONFIG;
+		const configurationToRemove = this.configurationService.inspect<IGlobPatterns | undefined>(targetSettingToRemove, { resource });
+		if (configurationToRemove.user?.value) {
+			const configurationClone = { ...configurationToRemove.user.value };
+			delete configurationClone[this.uriToPath(resource)];
 
-		// Remove from other setting
-		const targetSettingsToRemove = readonly ? [FILES_READONLY_EXCLUDE_CONFIG] : [FILES_READONLY_INCLUDE_CONFIG, FILES_READONLY_EXCLUDE_CONFIG];
-		for (const targetSettingToRemove of targetSettingsToRemove) {
-			const configurationToRemove = this.configurationService.inspect<IGlobPatterns | undefined>(targetSettingToRemove, { resource });
-			if (configurationToRemove.user?.value) {
-				const configurationClone = { ...configurationToRemove.user.value };
-				delete configurationClone[this.uriToPath(resource)];
-
-				await this.configurationService.updateValue(targetSettingToRemove, configurationClone);
-			}
+			await this.configurationService.updateValue(targetSettingToRemove, configurationClone, ConfigurationTarget.USER);
 		}
-
-		return this.isReadonly(resource) === readonly;
+		return true;
 	}
 
 	private uriToPath(uri: URI): string {
